@@ -1,0 +1,166 @@
+--- a/elements/ip/80211r/rclientcontrol.cc
++++ b/elements/ip/80211r/rclientcontrol.cc
+@@ -34,7 +34,7 @@ RClientControl::configure(Vector<String>
+       .read_p("ALPHA", DoubleArg(), alpha)
+       .complete() < 0)
+     return -1;
+-  rssi_threshold = tmp_rssi_threshold;
++  rssi_threshold = -68; //tmp_rssi_threshold;
+ 
+   identity = tmp_id;
+   current_ap = tmp_start[identity-1] - 1;
+@@ -176,7 +176,7 @@ void RClientControl::push_80211(Packet*p
+   // printf("ap:%u, rssi:%d\n", ap, rssi_this);
+ 
+   //if not update, return
+-  if(rssi[current_ap] < -80)
++  if(rssi[current_ap] < -127)
+     return;
+   // if IDLE, considering switching
+   static unsigned int tmp_counter = 0;
+--- a/elements/ip/wgtt/deduptcppacket.cc
++++ b/elements/ip/wgtt/deduptcppacket.cc
+@@ -42,6 +42,9 @@ DeDupTCPPacket::push(int port, Packet *p
+   WritablePacket *p = p_in->uniqueify();
+   struct click_ip *iph = p->ip_header();
+ 
++  if(!p)
++      return;
++  
+   // syslog (LOG_DEBUG, "IP id: %x", iph->ip_id);
+   uint64_t tmp_link_key = ((((uint64_t)(iph->ip_id))&0x000000000000ffff)<<32)+
+     (((uint64_t)((iph->ip_src).s_addr))&0x00000000ffffffff);
+--- a/elements/ip/wgtt/idadder.cc
++++ b/elements/ip/wgtt/idadder.cc
+@@ -34,6 +34,8 @@ void IDAdder::push(int port, Packet *p_i
+ 	}
+ 	// syslog (LOG_DEBUG, "IDadder: counter: %X\n", counter);
+ 	WritablePacket *p_base = p_in-> uniqueify();
++    if (!p_base)
++        return;
+ 	// *(p_base -> data()+13) |= 0x10;  // add a flag to the packet
+ 	p_base->push(sizeof(click_ether));  // tunneling head
+ 	p_base->put(2);  //mac80211 seq
+@@ -41,6 +43,9 @@ void IDAdder::push(int port, Packet *p_i
+ 	{	
+ 		Packet *p_tmp = p_base->clone();
+ 		WritablePacket *p = p_tmp->uniqueify();
++        if(!p)
++            continue;
++        
+ 		// eth
+ 		switch(i)
+ 		{
+--- a/elements/ip/wgtt/simpleControllerSwitch.cc
++++ b/elements/ip/wgtt/simpleControllerSwitch.cc
+@@ -130,7 +130,7 @@ void SimpleControllerSwitch::push_status
+   WritablePacket *p_data = Packet::make(100);
+   _tcp.th_seq = htonl(tmp_counter);
+   memcpy(p_data->data(), &_tcp, sizeof(_tcp));
+-    //syslog (LOG_DEBUG, "issu switch. for client: %d to ap: %d\n", c+1, best_ap+1);
++  syslog (LOG_DEBUG, "tcp th_seq: %d\n", tmp_counter);
+     //output_port = best_ap;
+   output(0).push(p_data);
+ 
+--- a/include/clicknet/wgtt.h
++++ b/include/clicknet/wgtt.h
+@@ -6,33 +6,33 @@
+ #define _WGTT_H_
+ 
+ 
+-// #define WGTT_DEBUG
+-// #ifdef WGTT_DEBUG
+-// #define DPRINT(fmt, args...) syslog (LOG_DEBUG, "%s: " fmt, __func__ , ## args) 
+-// #else
+-// #define DPRINT(fmt, args...) do {} while (0)
+-// #endif
+-// #define NDPRINT(fmt, args...) do {} while(0)
+-
+-// #ifdef WGTT_DEBUG
+-// #define DASSERT(expr)						\
+-//     if (!(expr)) {						\
+-//         syslog("Assertion failed! %s,%s,%s,line=%d\n",	\
+-//                #expr, __FILE__, __func__, __LINE__);	\
+-//     }
+-// #else
+-// #define DASSERT(expr) do {} while (0)
+-// #endif
+-
+-// #ifdef WGTT_DEBUG
+-// #define DASSERT2(expr1, expr2)						\
+-//     if (expr1 != expr2) {						\
+-//         syslog("Assertion failed! %s,%016lx,%s,%016lx,%s,%s,line=%d\n",	\
+-//                #expr1, expr1, #expr2, expr2, __FILE__, __func__, __LINE__);	\
+-//     }
+-// #else
+-// #define DASSERT2(expr1, expr2) do {} while (0)
+-// #endif
++#define WGTT_DEBUG
++#ifdef WGTT_DEBUG
++#define DPRINT(fmt, args...) syslog (LOG_DEBUG, "%s: " fmt, __func__ , ## args) 
++#else
++#define DPRINT(fmt, args...) do {} while (0)
++#endif
++#define NDPRINT(fmt, args...) do {} while(0)
++
++#ifdef WGTT_DEBUG
++#define DASSERT(expr)						\
++    if (!(expr)) {						\
++        syslog("Assertion failed! %s,%s,%s,line=%d\n",	\
++               #expr, __FILE__, __func__, __LINE__);	\
++    }
++#else
++#define DASSERT(expr) do {} while (0)
++#endif
++
++#ifdef WGTT_DEBUG
++#define DASSERT2(expr1, expr2)						\
++    if (expr1 != expr2) {						\
++        syslog("Assertion failed! %s,%016lx,%s,%016lx,%s,%s,line=%d\n",	\
++               #expr1, expr1, #expr2, expr2, __FILE__, __func__, __LINE__);	\
++    }
++#else
++#define DASSERT2(expr1, expr2) do {} while (0)
++#endif
+ 
+ 
+ struct my_test_struct {
+@@ -60,15 +60,15 @@ struct my_test_struct {
+ #define ANT 3
+ 
+ // client 1 ip
+-#define MAX_N_CLIENT 1
++#define MAX_N_CLIENT 2
+ //currently unused
+ // #define RSSI_THRESHOLD -67
+ 
+-#define CLIENT1_MAC_SUFFIX 0x07
+-#define CLIENT2_MAC_SUFFIX 0x0b
++#define CLIENT1_MAC_SUFFIX 0xd6
++#define CLIENT2_MAC_SUFFIX 0x95
+ #define CLIENT3_MAC_SUFFIX 0x0d
+-#define CLIENT1_MAC "44:c3:06:31:5b:07"
+-#define CLIENT2_MAC "44:c3:06:31:5b:0b"
++#define CLIENT1_MAC "18:56:80:4d:22:d6"
++#define CLIENT2_MAC "18:56:80:49:b2:95"
+ #define CLIENT3_MAC "44:c3:06:31:5b:0d"
+ // ap 
+ #define MAX_N_AP 3
+@@ -87,8 +87,8 @@ struct my_test_struct {
+ // controller
+ #define CONTROLLER_IN_IP_SUFFIX 68
+ 
+-#define CONTROLLER_IN_MAC "70:88:6b:80:60:7d"
+-#define CONTROLLER_IN_MAC_SUFFIX 0x7d
++#define CONTROLLER_IN_MAC "a0:36:9f:29:cc:8c"
++#define CONTROLLER_IN_MAC_SUFFIX 0x8c
+ 
+ #define RING_SIZE 256
+ // unit ms
+@@ -129,4 +129,4 @@ struct my_test_struct {
+ #define r_ether_type_suffix(p) *(p->data()+13)
+ 
+ 
+-#endif
+\ No newline at end of file
++#endif
